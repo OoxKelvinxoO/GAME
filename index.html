@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>網頁版掃雷遊戲</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        .game-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .game-controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .grid {
+            display: grid;
+            gap: 2px;
+            background-color: #999;
+            padding: 5px;
+            border-radius: 5px;
+            margin: 20px auto;
+        }
+
+        .cell {
+            width: 30px;
+            height: 30px;
+            background-color: #ccc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            font-weight: bold;
+            border: 2px outset #ddd;
+        }
+
+        .revealed {
+            background-color: #bbb;
+            border-style: inset;
+        }
+
+        .mine {
+            background-color: #ff4444 !important;
+        }
+
+        .flag {
+            background-color: #44ff44;
+        }
+
+        .item-button {
+            padding: 8px;
+            margin: 5px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+
+        .disabled {
+            background-color: #cccccc !important;
+            cursor: not-allowed;
+        }
+
+        .instructions {
+            margin-top: 20px;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        .instructions h2 {
+            margin-top: 0;
+        }
+
+        .instructions ul {
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>網頁版掃雷遊戲</h1>
+    <div class="game-container">
+        <div class="game-controls">
+            <select id="difficulty">
+                <option value="8,10">初級 (8x8)</option>
+                <option value="10,15" selected>中級 (10x10)</option>
+                <option value="16,40">高級 (16x16)</option>
+            </select>
+            <button id="restart">重新開始</button>
+            <div>
+                <button class="item-button" id="detector">金屬探測器 (3)</button>
+                <button class="item-button" id="xray">X光透視 (3)</button>
+            </div>
+            <div>
+                剩餘地雷: <span id="mines-counter">15</span><br>
+                時間: <span id="timer">0</span>秒
+            </div>
+        </div>
+        <div id="grid" class="grid"></div>
+        <div class="instructions">
+            <h2>遊戲說明書</h2>
+            <ul>
+                <li><strong>遊戲目標</strong>：在不觸發地雷的情況下，翻開所有非地雷的格子。</li>
+                <li><strong>操作方式</strong>：
+                    <ul>
+                        <li><strong>左鍵點擊</strong>：翻開格子。</li>
+                        <li><strong>右鍵點擊</strong>：標記或取消標記地雷（顯示🚩）。</li>
+                    </ul>
+                </li>
+                <li><strong>道具使用</strong>：
+                    <ul>
+                        <li><strong>金屬探測器</strong>：點擊道具按鈕後，再點擊格子，顯示該格子3x3範圍內的地雷數量（2秒）。</li>
+                        <li><strong>X光透視</strong>：點擊道具按鈕後，再點擊格子，顯示該格子3x3範圍內的地雷位置（2秒）。</li>
+                    </ul>
+                </li>
+                <li><strong>難度選擇</strong>：可選擇初級、中級或高級難度，地雷數量和雷區大小會隨之變化。</li>
+                <li><strong>勝利條件</strong>：翻開所有非地雷的格子即獲勝。</li>
+                <li><strong>失敗條件</strong>：翻開地雷格子即失敗。</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        class Minesweeper {
+            constructor(size, mines) {
+                this.size = size;
+                this.mines = mines;
+                this.grid = [];
+                this.revealed = [];
+                this.flags = [];
+                this.gameOver = false;
+                this.startTime = Date.now();
+                this.initGrid();
+            }
+
+            initGrid() {
+                // 初始化網格
+                for(let i = 0; i < this.size; i++) {
+                    this.grid[i] = new Array(this.size).fill(0);
+                    this.revealed[i] = new Array(this.size).fill(false);
+                    this.flags[i] = new Array(this.size).fill(false);
+                }
+
+                // 放置地雷
+                let placed = 0;
+                while(placed < this.mines) {
+                    const x = Math.floor(Math.random() * this.size);
+                    const y = Math.floor(Math.random() * this.size);
+                    if(this.grid[x][y] !== -1) {
+                        this.grid[x][y] = -1;
+                        placed++;
+                    }
+                }
+
+                // 計算數字
+                for(let x = 0; x < this.size; x++) {
+                    for(let y = 0; y < this.size; y++) {
+                        if(this.grid[x][y] === -1) continue;
+                        let count = 0;
+                        for(let dx = -1; dx <= 1; dx++) {
+                            for(let dy = -1; dy <= 1; dy++) {
+                                const nx = x + dx;
+                                const ny = y + dy;
+                                if(nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) {
+                                    if(this.grid[nx][ny] === -1) count++;
+                                }
+                            }
+                        }
+                        this.grid[x][y] = count;
+                    }
+                }
+            }
+
+            reveal(x, y) {
+                if(this.gameOver || this.flags[x][y]) return;
+                
+                this.revealed[x][y] = true;
+                if(this.grid[x][y] === 0) {
+                    // 自動展開空白區域
+                    for(let dx = -1; dx <= 1; dx++) {
+                        for(let dy = -1; dy <= 1; dy++) {
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            if(nx >= 0 && nx < this.size && 
+                               ny >= 0 && ny < this.size &&
+                               !this.revealed[nx][ny]) {
+                                this.reveal(nx, ny);
+                            }
+                        }
+                    }
+                }
+            }
+
+            toggleFlag(x, y) {
+                if(!this.revealed[x][y]) {
+                    this.flags[x][y] = !this.flags[x][y];
+                }
+            }
+
+            checkWin() {
+                return this.grid.every((row, x) => 
+                    row.every((cell, y) => 
+                        this.revealed[x][y] || (cell === -1)
+                    )
+                );
+            }
+        }
+
+        class GameUI {
+            constructor() {
+                this.size = 10;
+                this.mines = 15;
+                this.items = {
+                    detector: 3,
+                    xray: 3
+                };
+                this.activeItem = null;
+                this.timerInterval = null;
+                this.initEventListeners();
+                this.newGame();
+            }
+
+            newGame() {
+                const [size, mines] = document.getElementById('difficulty').value.split(',').map(Number);
+                this.size = size;
+                this.mines = mines;
+                
+                if(this.timerInterval) clearInterval(this.timerInterval);
+                this.game = new Minesweeper(size, mines);
+                this.items = { detector: 3, xray: 3 };
+                this.activeItem = null;
+                this.updateItemButtons();
+                this.renderGrid();
+                this.startTimer();
+            }
+
+            startTimer() {
+                document.getElementById('timer').textContent = '0';
+                this.timerInterval = setInterval(() => {
+                    const seconds = Math.floor((Date.now() - this.game.startTime) / 1000);
+                    document.getElementById('timer').textContent = seconds;
+                }, 1000);
+            }
+
+            renderGrid() {
+                const grid = document.getElementById('grid');
+                grid.style.gridTemplateColumns = `repeat(${this.size}, 30px)`;
+                grid.innerHTML = '';
+                
+                for(let x = 0; x < this.size; x++) {
+                    for(let y = 0; y < this.size; y++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        cell.dataset.x = x;
+                        cell.dataset.y = y;
+                        cell.addEventListener('click', (e) => this.handleClick(x, y, e));
+                        cell.addEventListener('contextmenu', (e) => {
+                            e.preventDefault();
+                            this.handleRightClick(x, y);
+                        });
+                        grid.appendChild(cell);
+                    }
+                }
+                this.updateView();
+            }
+
+            updateView() {
+                document.querySelectorAll('.cell').forEach(cell => {
+                    const x = parseInt(cell.dataset.x);
+                    const y = parseInt(cell.dataset.y);
+                    
+                    if(this.game.revealed[x][y]) {
+                        cell.classList.add('revealed');
+                        cell.textContent = this.game.grid[x][y] === 0 ? '' : this.game.grid[x][y];
+                        if(this.game.grid[x][y] === -1) cell.classList.add('mine');
+                    } else if(this.game.flags[x][y]) {
+                        cell.textContent = '🚩';
+                        cell.classList.add('flag');
+                    } else {
+                        cell.textContent = '';
+                        cell.className = 'cell';
+                    }
+                });
+                
+                document.getElementById('mines-counter').textContent = 
+                    this.mines - this.game.flags.flat().filter(Boolean).length;
+            }
+
+            handleClick(x, y, event) {
+                if(this.game.gameOver) return;
+                
+                if(this.activeItem) {
+                    this.useItem(x, y);
+                    return;
+                }
+
+                this.game.reveal(x, y);
+                if(this.game.grid[x][y] === -1) {
+                    this.gameOver();
+                } else if(this.game.checkWin()) {
+                    this.victory();
+                }
+                this.updateView();
+            }
+
+            handleRightClick(x, y) {
+                if(!this.game.revealed[x][y]) {
+                    this.game.toggleFlag(x, y);
+                    this.updateView();
+                }
+            }
+
+            useItem(x, y) {
+                if(this.activeItem === 'detector') {
+                    this.showDetectorArea(x, y);
+                    this.items.detector--;
+                } else if(this.activeItem === 'xray') {
+                    this.showXRay(x, y);
+                    this.items.xray--;
+                }
+                this.activeItem = null;
+                this.updateItemButtons();
+            }
+
+            showDetectorArea(x, y) {
+                // 顯示3x3範圍地雷數量
+                for(let dx = -1; dx <= 1; dx++) {
+                    for(let dy = -1; dy <= 1; dy++) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if(nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) {
+                            const cell = document.querySelector(`[data-x="${nx}"][data-y="${ny}"]`);
+                            cell.textContent = this.game.grid[nx][ny];
+                            setTimeout(() => {
+                                if(!this.game.revealed[nx][ny] && !this.game.flags[nx][ny]) {
+                                    cell.textContent = '';
+                                }
+                            }, 2000);
+                        }
+                    }
+                }
+            }
+
+            showXRay(x, y) {
+                // 顯示3x3範圍地雷位置
+                for(let dx = -1; dx <= 1; dx++) {
+                    for(let dy = -1; dy <= 1; dy++) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if(nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) {
+                            if(this.game.grid[nx][ny] === -1) {
+                                const cell = document.querySelector(`[data-x="${nx}"][data-y="${ny}"]`);
+                                cell.textContent = '💣';
+                                setTimeout(() => {
+                                    if(!this.game.revealed[nx][ny] && !this.game.flags[nx][ny]) {
+                                        cell.textContent = '';
+                                    }
+                                }, 2000);
+                            }
+                        }
+                    }
+                }
+            }
+
+            updateItemButtons() {
+                document.getElementById('detector').textContent = 
+                    `金屬探測器 (${this.items.detector})`;
+                document.getElementById('xray').textContent = 
+                    `X光透視 (${this.items.xray})`;
+                
+                document.querySelectorAll('.item-button').forEach(btn => {
+                    btn.disabled = this.items[btn.id] <= 0;
+                });
+            }
+
+            gameOver() {
+                this.game.gameOver = true;
+                clearInterval(this.timerInterval);
+                alert('遊戲結束！你踩到地雷了！');
+            }
+
+            victory() {
+                this.game.gameOver = true;
+                clearInterval(this.timerInterval);
+                alert('恭喜獲勝！🎉 磅包祝你新年快樂！🎆');
+            }
+
+            initEventListeners() {
+                document.getElementById('restart').addEventListener('click', () => this.newGame());
+                document.getElementById('detector').addEventListener('click', () => {
+                    if(this.items.detector > 0) {
+                        this.activeItem = 'detector';
+                        alert('請點擊要偵測的區域');
+                    }
+                });
+                document.getElementById('xray').addEventListener('click', () => {
+                    if(this.items.xray > 0) {
+                        this.activeItem = 'xray';
+                        alert('請點擊要透視的區域');
+                    }
+                });
+                document.getElementById('difficulty').addEventListener('change', () => this.newGame());
+            }
+        }
+
+        // 啟動遊戲
+        new GameUI();
+    </script>
+</body>
+</html>
